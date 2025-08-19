@@ -1,0 +1,844 @@
+---
+title: "ICRG Poster Plotting"
+author: "Cooper Joseph Sharp"
+date: "2025-08-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r}
+
+# Load packages
+library(dplyr)
+library(ggplot2)
+library(tidycensus)
+
+```
+
+```{r}
+
+# Load dataset
+df <- read.csv("../../derivatives/scoring/scoring-mastersheet.csv")
+
+```
+
+```{r}
+# Remove NAs and "Prefer not to respond", recode minority status, and compute counts + proportions
+df_race <- df %>%
+  filter(!is.na(demo_race), demo_race != 7) %>%
+  mutate(minority_status = case_when(
+    demo_race == 5 ~ "Non-Minority",
+    TRUE ~ "Minority"
+  )) %>%
+  group_by(minority_status) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(
+    Proportion = Count / sum(Count),
+    minority_status = factor(minority_status, levels = c("Non-Minority", "Minority"))
+  )
+
+# Bar plot: Count on y-axis, % labels above bars
+plot_race <- ggplot(df_race, aes(x = minority_status, y = Count, fill = minority_status)) +
+  geom_bar(stat = "identity", color = "black", width = 0.7) +
+  geom_text(
+    aes(label = scales::percent(Proportion, accuracy = 1)),
+    vjust = -0.5,
+    size = 8,
+    fontface = "bold",
+    color = "black"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +  # Dynamic y-axis with space above bars
+  labs(x = NULL, y = "Count") +
+  ylim(0, 850) +
+  scale_fill_manual(values = c("#AFCBB4", "#8E9A84")) +
+  theme_minimal(base_size = 20) +
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+
+    axis.text.x = element_text(size = 24, face = "bold", color = "black"),
+    axis.text.y = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold", color = "black"),
+
+    # Legend styling
+    legend.position = c(0.95, 0.95),
+    legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "white"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 24, color = "black"),
+    legend.key.size = unit(1.2, "cm"),
+    legend.key = element_rect(fill = NA, color = NA),
+    legend.spacing.y = unit(0.3, "cm")
+  ) +
+  guides(fill = guide_legend(byrow = TRUE))
+
+print(plot_race)
+
+
+
+```
+
+```{r}
+
+# Prepare gender count and proportion data
+df_gender <- df %>%
+  filter(!is.na(demo_gender), demo_gender %in% c(1, 2)) %>%
+  mutate(gender_label = case_when(
+    demo_gender == 1 ~ "Male",
+    demo_gender == 2 ~ "Female"
+  )) %>%
+  group_by(gender_label) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(
+    Proportion = Count / sum(Count),
+    gender_label = factor(gender_label, levels = c("Male", "Female"))
+  )
+
+# Create bar plot with count on y-axis and percent above bars
+plot_gender <- ggplot(df_gender, aes(x = gender_label, y = Count, fill = gender_label)) +
+  geom_bar(stat = "identity", color = "black", width = 0.7) +
+  geom_text(
+    aes(label = scales::percent(Proportion, accuracy = 1)),
+    vjust = -0.5,
+    size = 8,
+    fontface = "bold",
+    color = "black"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +  # gives headroom for labels
+  labs(x = NULL, y = "Count") +
+  ylim(0, 600) +
+  scale_fill_manual(values = c("#AFCBB4", "#8E9A84")) +
+  theme_minimal(base_size = 20) +
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+
+    axis.text.x = element_text(size = 24, face = "bold", color = "black"),
+    axis.text.y = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold", color = "black"),
+
+    # Legend styling
+    legend.position = c(0.95, 0.95),
+    legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = "white"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 24, color = "black"),
+    legend.key.size = unit(1.2, "cm"),
+    legend.key = element_rect(fill = NA, color = NA),
+    legend.spacing.y = unit(0.3, "cm")
+  ) +
+  guides(fill = guide_legend(byrow = TRUE))
+
+print(plot_gender)
+
+
+```
+
+```{r}
+
+## Not currently being used in poster. 
+
+# Recalculate df_prob to keep both Count and Proportion
+df_prob <- df %>%
+  filter(!is.na(prob_gam), prob_gam %in% c("yes", "no")) %>%
+  mutate(gambling_status = case_when(
+    prob_gam == "yes" ~ "Problem Gamblers",
+    prob_gam == "no" ~ "No Problem Gambling"
+  )) %>%
+  group_by(gambling_status) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(
+    Proportion = Count / sum(Count),
+    gambling_status = factor(gambling_status, levels = c("No Problem Gambling", "Problem Gamblers"))
+  )
+
+# Create bar plot with count on y-axis and percentage labels
+plot_gam <- ggplot(df_prob, aes(x = gambling_status, y = Count, fill = gambling_status)) +
+  geom_bar(stat = "identity", color = "black", width = 0.7) +
+  geom_text(
+    aes(label = scales::percent(Proportion, accuracy = 1)),
+    vjust = -0.5,
+    size = 8,
+    fontface = "bold",
+    color = "black"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +  # dynamic limit with a bit of headroom
+  labs(x = NULL, y = "Count") +
+  scale_fill_manual(
+    values = c("#AFCBB4", "#8E9A84"),
+    labels = c("Non-PG", "PG")
+  ) +
+  ylim(0, 800) + 
+  theme_minimal(base_size = 20) +
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(size = 24, face = "bold", color = "black"),
+    axis.text.y = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold", color = "black"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    legend.position = "none"
+
+)
+print(plot_gam)
+
+
+```
+
+```{r}
+
+library(ggplot2)
+library(gridExtra)
+library(grid)
+
+# Remove NAs
+df <- df[!is.na(df$demo_yrs), ]
+
+# Descriptive statistics
+mean_age <- round(mean(df$demo_yrs), 2)
+sd_age <- round(sd(df$demo_yrs), 2)
+
+# Plot
+plot_density_simple <- ggplot(df, aes(x = demo_yrs)) +
+  geom_density(fill = "#8E8577", alpha = 0.5, color = "black", size = 0.8) +
+  labs(x = "", y = "Density") +
+  scale_x_continuous(limits = c(18, 80), breaks = c(18, 80)) +
+  ylim(0, 0.035) +
+
+theme_minimal(base_size = 24) +
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text.x = element_text(size = 24, face = "bold", color = "black"),
+    axis.ticks.x = element_blank(),  # Remove x tick marks
+    axis.title.x = element_text(size = 24, face = "bold", color = "black"),
+    axis.text.y = element_text(size = 24, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 24, face = "bold")
+  )
+
+print(plot_density_simple)
+
+
+```
+```{r}
+
+plot_race <- plot_race + theme(legend.position = "none")
+plot_gender <- plot_gender + theme(legend.position = "none")
+plot_gam <- plot_gam + theme(legend.position = "none")
+plot_density_simple <- plot_density_simple + theme(legend.position = "none")
+
+```
+
+
+```{r}
+
+ggsave("../../derivatives/plotting/plot_race.svg", plot_race, width = 6, height = 4, dpi = 300)
+ggsave("../../derivatives/plotting/plot_gender.svg", plot_gender, width = 6, height = 4, dpi = 300)
+ggsave("../../derivatives/plotting/plot_gam.svg", plot_gam, width = 6, height = 4, dpi = 300)
+ggsave("../../derivatives/plotting/plot_age.svg", plot_density_simple, width = 6, height = 4, dpi = 300)
+
+```
+
+```{r}
+
+# Composite BIS/BAS score
+df$bisbas_bas <- df$bisbas_drive + df$bisbas_fun_seek + df$bisbas_reward_res
+
+# Calculate z-scores
+calculate_z <- function(X, X_mean, S) {
+  return((X - X_mean) / S)
+}
+
+df$bisbas_bas_z_score <- calculate_z(
+  df$bisbas_bas,
+  mean(df$bisbas_bas, na.rm = TRUE),
+  sd(df$bisbas_bas, na.rm = TRUE))
+
+df$spsrq_sr_z_score <- calculate_z(
+  df$spsrq_sr,
+  mean(df$spsrq_sr, na.rm = TRUE),
+  sd(df$spsrq_sr, na.rm = TRUE))
+
+# Relative sensitivity: BISBAS - SPSRQ
+df$rs_standard <- df$bisbas_bas_z_score - df$spsrq_sr_z_score
+
+# Remove outliers in rs_standard
+q3 <- quantile(df$rs_standard, 0.75, na.rm = TRUE)
+q1 <- quantile(df$rs_standard, 0.25, na.rm = TRUE)
+iqr <- q3 - q1
+upper_bound <- q3 + 1.5 * iqr
+lower_bound <- q1 - 1.5 * iqr
+df <- df[!(df$rs_standard >= upper_bound | df$rs_standard <= lower_bound) | is.na(df$rs_standard), ]
+
+# Composite reward score
+df$rew_composite <- df$spsrq_sr_z_score + df$bisbas_bas_z_score
+
+```
+
+```{r}
+
+# === Label mappings ===
+income_labels <- c(
+  "1" = "$0 to $9,999", "2" = "$10,000 to $14,999", "3" = "$15,000 to $19,999", "4" = "$20,000 to $24,999",
+  "5" = "$25,000 to $29,999", "6" = "$30,000 to $34,999", "7" = "$35,000 to $39,999", "8" = "$40,000 to $44,999",
+  "9" = "$45,000 to $49,999", "10" = "$50,000 to $59,999", "11" = "$60,000 to $74,999", "12" = "$75,000 to $99,999",
+  "13" = "$100,000 to $124,999", "14" = "$125,000 to $149,999", "15" = "$150,000 to $199,999", "16" = "$200,000 or more")
+
+# Get your own
+# census_api_key("your_api_key_here", install = TRUE)
+
+df <- df %>%
+  mutate(ses_thi = income_labels[as.character(ses_thi)])
+
+# === Pull Gini index by ZIP ===
+gini_zip <- get_acs(
+  geography = "zcta",
+  variables = c(gini = "B19083_001"),
+  year = 2021,
+  survey = "acs5") %>%
+  dplyr::select(GEOID, estimate) %>%
+  rename(zipcode = GEOID, gini = estimate)
+
+# === Join Gini data ===
+df <- df %>%
+  mutate(zipcode = as.character(demo_zip_prim)) %>%
+  left_join(gini_zip, by = "zipcode")
+
+```
+
+
+```{r}
+
+df$prob_gam <- factor(df$prob_gam, levels = c(
+  "no", 
+  "yes"
+))
+
+summary_data <- df %>%
+  group_by(prob_gam) %>%
+  summarise(
+    mean_rew = mean(rew_composite, na.rm = TRUE),
+    se_rew = sd(rew_composite, na.rm = TRUE) / sqrt(sum(!is.na(rew_composite)))
+  )
+
+plot_trs <- ggplot(summary_data, aes(x = prob_gam, y = mean_rew, fill = prob_gam)) +
+  geom_bar(stat = "identity", width = 0.6, color = "black", size = 0.2) +
+  geom_errorbar(aes(ymin = mean_rew - se_rew, ymax = mean_rew + se_rew), width = 0.2, size = 0.5) +
+  labs(
+    title = "",  # Remove title if you want it blank
+    x = "",
+    y = "Reward Sensitivtiy",
+    fill = "Problem Gambling"
+  ) +
+  scale_fill_manual(
+    values = c("yes" = "#4D94C7", "no" = "#FFD700"),
+    labels = c("no" = "Non-PG", "yes" = "PG")
+  ) +
+  scale_x_discrete(labels = c("no" = "Non-PG", "yes" = "PG")) +
+  theme_gray() +
+  theme_minimal(base_size = 24) +
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20, color = "black"),
+  )
+
+print(plot_trs)
+
+# Run and print t-test results
+t_test_result <- t.test(rew_composite ~ prob_gam, data = df)
+print(t_test_result)
+
+```
+
+
+```{r}
+
+summary_data <- df %>%
+  group_by(prob_gam) %>%
+  summarise(
+    mean_yrs = mean(demo_yrs, na.rm = TRUE),
+    se_yrs = sd(demo_yrs, na.rm = TRUE) / sqrt(sum(!is.na(demo_yrs)))
+  )
+
+plot_yrs <- ggplot(summary_data, aes(x = prob_gam, y = mean_yrs, fill = prob_gam)) +
+  geom_bar(stat = "identity", width = 0.6, color = "black", size = 0.2) +
+  geom_errorbar(aes(ymin = mean_yrs - se_yrs, ymax = mean_yrs + se_yrs), width = 0.2, size = 0.5) +
+  labs(
+    title = "",  # Remove title if you want it blank
+    x = "",
+    y = "Age",
+    fill = "Problem Gambling"
+  ) +
+  scale_fill_manual(
+    values = c("yes" = "#4D94C7", "no" = "#FFD700"),
+    labels = c("no" = "Non-PG", "yes" = "PG")
+  ) +
+  scale_x_discrete(labels = c("no" = "Non-PG", "yes" = "PG")) +
+  theme_gray() +
+  theme_minimal(base_size = 24) +
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20, color = "black")
+  )
+
+print(plot_yrs)
+
+# Run and print t-test results
+t_test_result <- t.test(demo_yrs ~ prob_gam, data = df)
+print(t_test_result)
+
+
+```
+
+
+```{r}
+
+summary_data <- df %>%
+  group_by(prob_gam) %>%
+  summarise(
+    mean_gini = mean(gini, na.rm = TRUE),
+    se_gini = sd(gini, na.rm = TRUE) / sqrt(sum(!is.na(gini)))
+  )
+
+plot_gini <- ggplot(summary_data, aes(x = prob_gam, y = mean_gini, fill = prob_gam)) +
+  geom_bar(stat = "identity", width = 0.6, color = "black", size = 0.2) +
+  geom_errorbar(aes(ymin = mean_gini - se_gini, ymax = mean_gini + se_gini), width = 0.2, size = 0.5) +
+  labs(
+    title = "",  # Remove title if you want it blank
+    x = "",
+    y = "Income Inequality",
+    fill = "Problem Gambling"
+  ) +
+  scale_fill_manual(
+    values = c("yes" = "#4D94C7", "no" = "#FFD700"),
+    labels = c("no" = "Non-PG", "yes" = "PG")
+  ) +
+  scale_x_discrete(labels = c("no" = "Non-PG", "yes" = "PG")) +
+  theme_gray() +
+  theme_minimal(base_size = 24) +
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20, color = "black"),
+    legend.position = "bottom"  
+  )
+
+print(plot_gini)
+
+# Run and print t-test results
+t_test_result <- t.test(gini ~ prob_gam, data = df)
+print(t_test_result)
+
+
+```
+
+```{r}
+
+df$dospert_all <- ((df$dospert_ethic + df$dospert_gam + df$dospert_hs + df$dospert_inv + df$dospert_rec + df$dospert_soc) / 40)
+
+summary_data <- df %>%
+  group_by(prob_gam) %>%
+  summarise(
+    mean_dospert_all = mean(dospert_all, na.rm = TRUE),
+    se_dospert_all = sd(dospert_all, na.rm = TRUE) / sqrt(sum(!is.na(dospert_all)))
+  )
+
+plot_dospert_all <- ggplot(summary_data, aes(x = prob_gam, y = mean_dospert_all, fill = prob_gam)) +
+  geom_bar(stat = "identity", width = 0.6, color = "black", size = 0.2) +
+  geom_errorbar(aes(ymin = mean_dospert_all - se_dospert_all, ymax = mean_dospert_all + se_dospert_all), width = 0.2, size = 0.5) +
+  labs(
+    title = "",  # Remove title if you want it blank
+    x = "",
+    y = "Risk-Taking",
+    fill = "Problem Gambling"
+  ) +
+  scale_fill_manual(
+    values = c("yes" = "navyblue", "no" = "seagreen"),
+    labels = c("no" = "Non-PG", "yes" = "PG")
+  ) +
+  scale_x_discrete(labels = c("no" = "Non-PG", "yes" = "PG")) +
+  theme_gray() +
+  theme_minimal(base_size = 24) +
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20, color = "black"),
+    legend.position = "bottom"
+  )
+
+print(plot_dospert_all)
+
+```
+
+```{r}
+
+df$dospert_other <- ((df$dospert_ethic + df$dospert_hs + df$dospert_rec + df$dospert_soc) / 32)
+
+summary_data <- df %>%
+  group_by(prob_gam) %>%
+  summarise(
+    mean_dospert_other = mean(dospert_other, na.rm = TRUE),
+    se_dospert_other = sd(dospert_other, na.rm = TRUE) / sqrt(sum(!is.na(dospert_other)))
+  )
+
+plot_dospert_other <- ggplot(summary_data, aes(x = prob_gam, y = mean_dospert_other, fill = prob_gam)) +
+  geom_bar(stat = "identity", width = 0.6, color = "black", size = .5) +
+  geom_errorbar(aes(ymin = mean_dospert_other - se_dospert_other, ymax = mean_dospert_other + se_dospert_other), width = 0.2, size = 0.5) +
+  labs(
+    title = "",  # Remove title if you want it blank
+    x = "",
+    y = "Non-Financial Risk-Taking",
+    fill = "Problem Gambling"
+  ) +
+  scale_fill_manual(
+    values = c("yes" = "#4D94C7", "no" = "#FFD700"),
+    labels = c("no" = "Non-PG", "yes" = "PG")
+  ) +
+  scale_x_discrete(labels = c("no" = "Non-PG", "yes" = "PG")) +
+  theme_gray() +
+  theme_minimal(base_size = 24) +
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20, color = "black"),
+    legend.position = "bottom"  
+  )
+
+print(plot_dospert_other)
+
+# Run and print t-test results
+t_test_result <- t.test(dospert_other ~ prob_gam, data = df)
+print(t_test_result)
+
+```
+
+
+```{r}
+ggsave("../../derivatives/plotting/plot_trs.svg", plot_trs, width = 6, height = 6, dpi = 300)
+ggsave("../../derivatives/plotting/plot_yrs.svg", plot_yrs, width = 6, height = 6, dpi = 300)
+ggsave("../../derivatives/plotting/plot_gini.svg", plot_gini, width = 6, height = 6, dpi = 300)
+ggsave("../../derivatives/plotting/plot_dospert_all.svg", plot_dospert_all, width = 6, height = 6, dpi = 300)
+ggsave("../../derivatives/plotting/plot_dospert_other.svg", plot_dospert_other, width = 6, height = 6, dpi = 300)
+```
+
+
+```{r}
+
+df$gsas_mental <- df$gsas_thought + df$gsas_urge
+
+median_uclal <- median(df$uclal_total, na.rm = TRUE)
+
+df$uclal_group <- ifelse(df$uclal_total > median_uclal, "High", "Low")
+df$uclal_group <- factor(df$uclal_group, levels = c("Low", "High"))
+
+
+# Create df_pg 
+df_pg <- subset(df, prob_gam == "yes")
+
+```
+
+
+```{r}
+
+# Calculate Pearson correlation
+cor_test <- cor.test(df_pg$rew_composite, df_pg$gsas_total)
+
+# Extract values
+n_value <- nrow(df_pg)
+r_value <- round(cor_test$estimate, 2)
+
+# Format p-value
+if (cor_test$p.value < 0.001) {
+  p_value_text <- "< .001"
+} else {
+  p_value_text <- paste("= ", signif(cor_test$p.value, 2))
+}
+
+# Updated plot
+plot_pg_rew_composite <- ggplot(df_pg, aes(x = rew_composite, y = gsas_total)) +
+  geom_jitter(alpha = 0.2, size = 3) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.5, color = "#1C1C1C", fill = "#FF4F9B", alpha = 0.6) +
+  labs(
+    x = "Reward Sensitivity",
+    y = "Gambling Symptom\nSeverity (G-SAS)",
+    title = ""
+  ) +
+
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold")
+  )
+
+# Print the plot
+print(plot_pg_rew_composite)
+
+print(n_value)
+print(p_value_text)
+print(r_value)
+
+# Fit linear model for the plot (Gini predicting gambling symptoms)
+model_rew_composite <- lm(gsas_total ~ rew_composite + demo_yrs + demo_gender + gini, data = df_pg)
+summary(model_rew_composite)
+
+```
+
+```{r}
+
+# Calculate Pearson correlation
+cor_test <- cor.test(df_pg$susd_depression, df_pg$gsas_total)
+
+# Extract values
+n_value <- nrow(df_pg)
+r_value <- round(cor_test$estimate, 2)
+
+# Format p-value
+if (cor_test$p.value < 0.001) {
+  p_value_text <- "< .001"
+} else {
+  p_value_text <- paste("= ", signif(cor_test$p.value, 2))
+}
+
+# Updated plot
+plot_pg_depression <- ggplot(df_pg, aes(x = susd_depression, y = gsas_total)) +
+  geom_jitter(alpha = 0.2, size = 3) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.5, color = "#1C1C1C", fill = "#2F5E59", alpha = 0.6) +
+  labs(
+    x = "Depressive Symptoms",
+    y = "Gambling Symptom\nSeverity (G-SAS)",
+    title = ""
+  ) +
+
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold")
+  )
+
+# Print the plot
+print(plot_pg_depression)
+
+print(n_value)
+print(p_value_text)
+print(r_value)
+
+# Fit linear model for the plot (Gini predicting gambling symptoms)
+model_depression <- lm(gsas_total ~ susd_depression + demo_yrs + demo_gender + gini, data = df_pg)
+summary(model_depression)
+
+```
+
+```{r}
+
+# Calculate Pearson correlation
+cor_test <- cor.test(df_pg$susd_mania, df_pg$gsas_total)
+
+# Extract values
+n_value <- nrow(df_pg)
+r_value <- round(cor_test$estimate, 2)
+
+# Format p-value
+if (cor_test$p.value < 0.001) {
+  p_value_text <- "< .001"
+} else {
+  p_value_text <- paste("= ", signif(cor_test$p.value, 2))
+}
+
+# Updated plot
+plot_pg_mania <- ggplot(df_pg, aes(x = susd_mania, y = gsas_total)) +
+  geom_jitter(alpha = 0.2, size = 3) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.5, color = "#1C1C1C", fill = "#D72638", alpha = 0.6) +
+  labs(
+    x = "Mania Symptoms",
+    y = "Gambling Symptom\nSeverity (G-SAS)",
+    title = ""
+  ) +
+
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold")
+  )
+
+# Print the plot
+print(plot_pg_mania)
+
+print(n_value)
+print(p_value_text)
+print(r_value)
+
+# Fit linear model for the plot (Gini predicting gambling symptoms)
+model_mania <- lm(gsas_total ~ susd_mania + demo_yrs + demo_gender + gini, data = df_pg)
+summary(model_mania)
+
+```
+
+```{r}
+
+# Calculate Pearson correlation
+cor_test <- cor.test(df_pg$dospert_other, df_pg$gsas_total)
+
+# Extract values
+n_value <- nrow(df_pg)
+r_value <- round(cor_test$estimate, 2)
+
+# Format p-value
+if (cor_test$p.value < 0.001) {
+  p_value_text <- "< .001"
+} else {
+  p_value_text <- paste("= ", signif(cor_test$p.value, 2))
+}
+
+# Updated plot
+plot_pg_dospert_other <- ggplot(df_pg, aes(x = dospert_other, y = gsas_total)) +
+  geom_jitter(alpha = 0.3, size = 3) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.5, color = "#1C1C1C", fill = "#CBA135", alpha = 0.6) +
+  labs(
+    x = "Non-Financial Risk-Taking",
+    y = "Gambling Symptom\nSeverity (G-SAS)",
+    title = ""
+  ) +
+
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold")
+  )
+
+# Print the plot
+print(plot_pg_dospert_other)
+
+print(n_value)
+print(p_value_text)
+print(r_value)
+
+# Fit linear model for the plot (Gini predicting gambling symptoms)
+model_dospert_other <- lm(formula = gsas_total ~ rew_composite * demo_yrs * gini + dospert_other + demo_gender, data = df_pg)
+summary(model_dospert_other)
+
+```
+
+```{r}
+
+# Plot with uclal_group as the moderator and matching SE fill colors
+plot_pg_uclal <- ggplot(df_pg, aes(x = rew_composite, y = gsas_mental, color = uclal_group, fill = uclal_group)) +
+  geom_jitter(alpha = 0.3, size = 3) +
+  geom_smooth(method = "lm", se = TRUE, size = 1.5, alpha = 0.5) +
+  labs(
+    x = "Reward Sensitivity",
+    y = "Thoughts & Urges\n(G-SAS)",
+    title = ""
+  ) +
+  scale_color_manual(
+    values = c("Low" = "#009C8A", "High" = "#E76B3C")
+  ) +
+  scale_fill_manual(
+    values = c("Low" = "#009C8A", "High" = "#E76B3C")
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "gray90", color = NA),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "gray90"),
+    axis.text = element_text(size = 24, face = "bold", color = "black"),
+    axis.title = element_text(size = 24, face = "bold"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20, color = "black"),
+    legend.position = "bottom"
+  )
+
+# Print the plot
+print(plot_pg_uclal)
+
+# Fit linear model for the plot (Gini predicting gambling symptoms)
+model_lone <- lm(formula = gsas_mental ~ rew_composite * demo_yrs * uclal_total, data = df_pg)
+summary(model_lone)
+
+```
+
+```{r}
+
+# Install grid package
+# install.packages("gridExtra")
+
+# Load necessary library
+library(gridExtra)
+
+# Example: arrange 4 plots (replace these with your actual plots)
+plot_one_grid <- grid.arrange(
+  plot_race, plot_gender,
+  plot_density_simple, plot_gam, 
+  ncol = 2, nrow = 2
+)
+
+
+```
+
+
+```{r}
+# Set global width and height for saved plots
+plot_width <- 5
+plot_height <- 5
+plot_dpi <- 300
+
+# Save all plots with consistent dimensions
+ggsave("../../derivatives/plotting/plot_pg_rew_composite.svg", 
+       plot_pg_rew_composite, width = plot_width, height = plot_height, dpi = plot_dpi)
+
+ggsave("../../derivatives/plotting/plot_one_grid.svg", 
+       plot_one_grid, width = plot_width, height = plot_height, dpi = plot_dpi)
+
+ggsave("../../derivatives/plotting/plot_pg_depression.svg", 
+       plot_pg_depression, width = plot_width, height = plot_height, dpi = plot_dpi)
+
+ggsave("../../derivatives/plotting/plot_pg_mania.svg", 
+       plot_pg_mania, width = plot_width, height = plot_height, dpi = plot_dpi)
+
+ggsave("../../derivatives/plotting/plot_pg_uclal.svg", 
+       plot_pg_uclal, width = plot_width, height = plot_height, dpi = plot_dpi)
+
+ggsave("../../derivatives/plotting/plot_pg_dospert_other.svg", 
+       plot_pg_dospert_other, width = plot_width, height = plot_height, dpi = plot_dpi)
+
+```

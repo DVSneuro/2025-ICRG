@@ -1,0 +1,55 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' class='svglite' width='432.00pt' height='288.00pt' viewBox='0 0 432.00 288.00'>
+<defs>
+  <style type='text/css'><![CDATA[
+    .svglite line, .svglite polyline, .svglite polygon, .svglite path, .svglite rect, .svglite circle {
+      fill: none;
+      stroke: #000000;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-miterlimit: 10.00;
+    }
+    .svglite text {
+      white-space: pre;
+    }
+  ]]></style>
+</defs>
+<rect width='100%' height='100%' style='stroke: none; fill: none;'/>
+<defs>
+  <clipPath id='cpMC4wMHw0MzIuMDB8MC4wMHwyODguMDA='>
+    <rect x='0.00' y='0.00' width='432.00' height='288.00' />
+  </clipPath>
+</defs>
+<g clip-path='url(#cpMC4wMHw0MzIuMDB8MC4wMHwyODguMDA=)'>
+</g>
+<defs>
+  <clipPath id='cpODYuNTR8NDIyLjA0fDkuOTZ8MjQ2LjQ5'>
+    <rect x='86.54' y='9.96' width='335.50' height='236.53' />
+  </clipPath>
+</defs>
+<g clip-path='url(#cpODYuNTR8NDIyLjA0fDkuOTZ8MjQ2LjQ5)'>
+<rect x='86.54' y='9.96' width='335.50' height='236.53' style='stroke-width: 1.94; stroke: none; fill: #E5E5E5;' />
+<polyline points='86.54,199.90 422.04,199.90 ' style='stroke-width: 0.97; stroke: #E5E5E5; stroke-linecap: butt;' />
+<polyline points='86.54,128.23 422.04,128.23 ' style='stroke-width: 0.97; stroke: #E5E5E5; stroke-linecap: butt;' />
+<polyline points='86.54,56.55 422.04,56.55 ' style='stroke-width: 0.97; stroke: #E5E5E5; stroke-linecap: butt;' />
+<polyline points='86.54,235.74 422.04,235.74 ' style='stroke-width: 1.94; stroke: #FFFFFF; stroke-linecap: butt;' />
+<polyline points='86.54,164.06 422.04,164.06 ' style='stroke-width: 1.94; stroke: #FFFFFF; stroke-linecap: butt;' />
+<polyline points='86.54,92.39 422.04,92.39 ' style='stroke-width: 1.94; stroke: #FFFFFF; stroke-linecap: butt;' />
+<polyline points='86.54,20.71 422.04,20.71 ' style='stroke-width: 1.94; stroke: #FFFFFF; stroke-linecap: butt;' />
+<polyline points='178.04,246.49 178.04,9.96 ' style='stroke-width: 1.94; stroke: #FFFFFF; stroke-linecap: butt;' />
+<polyline points='330.54,246.49 330.54,9.96 ' style='stroke-width: 1.94; stroke: #FFFFFF; stroke-linecap: butt;' />
+<rect x='277.16' y='47.23' width='106.75' height='188.51' style='stroke-width: 1.07; stroke-linecap: butt; stroke-linejoin: miter; fill: #8E9A84;' />
+<rect x='124.66' y='63.36' width='106.75' height='172.38' style='stroke-width: 1.07; stroke-linecap: butt; stroke-linejoin: miter; fill: #AFCBB4;' />
+<text x='330.54' y='39.05' text-anchor='middle' style='font-size: 22.76px; font-weight: bold; font-family: "Arial";' textLength='45.53px' lengthAdjust='spacingAndGlyphs'>52%</text>
+<text x='178.04' y='55.17' text-anchor='middle' style='font-size: 22.76px; font-weight: bold; font-family: "Arial";' textLength='45.53px' lengthAdjust='spacingAndGlyphs'>48%</text>
+</g>
+<g clip-path='url(#cpMC4wMHw0MzIuMDB8MC4wMHwyODguMDA=)'>
+<text x='77.57' y='244.38' text-anchor='end' style='font-size: 24.00px; font-weight: bold; font-family: "Arial";' textLength='13.35px' lengthAdjust='spacingAndGlyphs'>0</text>
+<text x='77.57' y='172.70' text-anchor='end' style='font-size: 24.00px; font-weight: bold; font-family: "Arial";' textLength='40.05px' lengthAdjust='spacingAndGlyphs'>200</text>
+<text x='77.57' y='101.03' text-anchor='end' style='font-size: 24.00px; font-weight: bold; font-family: "Arial";' textLength='40.05px' lengthAdjust='spacingAndGlyphs'>400</text>
+<text x='77.57' y='29.35' text-anchor='end' style='font-size: 24.00px; font-weight: bold; font-family: "Arial";' textLength='40.05px' lengthAdjust='spacingAndGlyphs'>600</text>
+<text x='178.04' y='272.73' text-anchor='middle' style='font-size: 24.00px; font-weight: bold; font-family: "Arial";' textLength='53.35px' lengthAdjust='spacingAndGlyphs'>Male</text>
+<text x='330.54' y='272.73' text-anchor='middle' style='font-size: 24.00px; font-weight: bold; font-family: "Arial";' textLength='82.71px' lengthAdjust='spacingAndGlyphs'>Female</text>
+<text transform='translate(27.24,128.23) rotate(-90)' text-anchor='middle' style='font-size: 24.00px; font-weight: bold; font-family: "Arial";' textLength='69.30px' lengthAdjust='spacingAndGlyphs'>Count</text>
+</g>
+</svg>
