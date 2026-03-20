@@ -1,0 +1,434 @@
+---
+title: "Untitled"
+author: "Cooper Joseph Sharp"
+date: "2026-03-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(dplyr)
+library(car)         # vif()
+library(broom)       # tidy()
+library(pscl)        # pR2()
+library(lmtest)      # lrtest(), coeftest()
+library(sandwich)    # vcovHC(), vcovCL() if needed
+
+```
+
+```{r}
+
+setwd("~/Documents/GitHub/2025-ICRG")
+df     <- read.csv("derivatives/scoring/scoring-mastersheet.csv")
+df_geo <- read.csv("derivatives/scoring/geo-variables.csv")
+
+```
+
+```{r Create Reward Sens. Composite}
+
+# Composite BIS/BAS score
+df$bisbas_bas <- df$bisbas_drive + df$bisbas_fun_seek + df$bisbas_reward_res
+
+# Calculate z-scores
+calculate_z <- function(X, X_mean, S) {
+  return((X - X_mean) / S)
+}
+
+df$bisbas_bas_z_score <- calculate_z(
+  df$bisbas_bas,
+  mean(df$bisbas_bas, na.rm = TRUE),
+  sd(df$bisbas_bas, na.rm = TRUE))
+
+df$spsrq_sr_z_score <- calculate_z(
+  df$spsrq_sr,
+  mean(df$spsrq_sr, na.rm = TRUE),
+  sd(df$spsrq_sr, na.rm = TRUE))
+
+# Relative sensitivity: BISBAS - SPSRQ
+df$rs_standard <- df$bisbas_bas_z_score - df$spsrq_sr_z_score
+
+# Remove outliers in rs_standard
+q3 <- quantile(df$rs_standard, 0.75, na.rm = TRUE)
+q1 <- quantile(df$rs_standard, 0.25, na.rm = TRUE)
+iqr <- q3 - q1
+upper_bound <- q3 + 1.5 * iqr
+lower_bound <- q1 - 1.5 * iqr
+df <- df[!(df$rs_standard >= upper_bound | df$rs_standard <= lower_bound) | is.na(df$rs_standard), ]
+
+# Composite reward score
+df$rew_composite <- df$spsrq_sr_z_score + df$bisbas_bas_z_score
+
+```
+
+```{r}
+# Pull Gini index by ZIP
+gini_zip <- get_acs(
+  geography = "zcta",
+  variables = c(gini = "B19083_001"),
+  year = 2021,
+  survey = "acs5") %>%
+  dplyr::select(GEOID, estimate) %>%
+  rename(zipcode = GEOID, gini = estimate)
+
+# Join Gini data
+df <- df %>%
+  mutate(zipcode = as.character(demo_zip_prim)) %>%
+  left_join(gini_zip, by = "zipcode")
+
+df <- df %>%
+  left_join(df_geo, by = "ResponseId") %>%
+  mutate(across(everything(), ~ ifelse(. == -999, NA, .))) %>%
+  filter(if_all(c(sogs_total, bbgs_total, mandf_casinog, mandf_onlineg,
+                  TotalCrime, unemployed, gini, demo_yrs, demo_gender,
+                  rew_composite, susd_depression, susd_mania,
+                  scared_total, uclal_total), ~ !is.na(.)))
+```
+
+```{r Clean and Label Data}
+
+n_before <- nrow(df)
+
+df <- df %>%
+  mutate(
+    pg = case_when(
+      # Group 2: Gambles and meets problem gambling criteria
+      sogs_total >= 1 & bbgs_total >= 4 & (mandf_casinog + mandf_onlineg) >= 1 ~ 2,
+      # Group 0: Non-gamblers
+      sogs_total == 0 & bbgs_total <= 3 & (mandf_casinog + mandf_onlineg) == 0 ~ 0,
+      # Group 1: Gambles but does not meet problem gambling criteria
+      TRUE ~ 1
+    ),
+    
+    age_group = cut(
+      demo_yrs,
+      breaks = c(17, 25, 35, 45, 55, 65, 80),
+      labels = c("18–25", "26–35", "36–45", "46–55", "56–65", "66–80")
+    ),
+    
+    gender = factor(
+      demo_gender,
+      levels = c(1, 2),
+      labels = c("Male", "Female")
+    ),
+    
+    income = factor(
+      ses_tpi,
+      levels = 1:7,
+      labels = c("$0 to $25,000", "$26,000 to $50,000", "$51,000-$75,000",
+                 "$76,000-$100,000", "$101,000-$150,000", "$151,000-$200,000", "$200,000 or more")
+    )
+  )
+
+n_after <- nrow(df)
+cat("Total retained:", n_after, "\n")
+cat("Group 0 (Non-gamblers):", sum(df$pg == 0), "\n")
+cat("Group 2 (Gamblers, no PG criteria):", sum(df$pg == 2), "\n")
+cat("Group 1 (Problem gamblers):", sum(df$pg == 1), "\n")
+
+table(df$gender, df$pg)
+
+df <- df %>%
+  mutate(
+    income_median_split = factor(
+      ifelse(ses_tpi <= 2, "Below Median (<$40k)", "Above Median (≥$40k)"),
+      levels = c("Below Median (<$40k)", "Above Median (≥$40k)")
+    )
+  )
+
+```
+
+```{r}
+
+# ── Colours ──────────────────────────────────────────────────────────────────
+col_ng  <- "pink3"   # Non-Gambler  (light blue)
+col_rg  <- "purple1"   # Recreational (mid blue)
+col_pg  <- "purple4"   # Problem      (dark blue)
+
+group_colours <- c("Non-Gambler" = col_ng,
+                   "Recreational" = col_rg,
+                   "Problem Gambler" = col_pg)
+
+# ── Helper: add Status factor ─────────────────────────────────────────────────
+add_status <- function(data) {
+  data %>%
+    mutate(Status = factor(
+      case_when(
+        pg == 0 ~ "Non-Gambler",
+        pg == 1 ~ "Porblem Gambler",
+        pg == 2 ~ "Recreational"
+      ),
+      levels = c("Non-Gambler", "Problem Gambler", "Recreational")
+    ))
+}
+
+# Apply globally
+df <- add_status(df)
+
+```
+
+```{r}
+
+dat <- df %>%
+  filter(pg != 2) %>%
+  
+  # ── Drop NAs on all variables used downstream ──────────────────────────────
+  drop_na(
+    pg, demo_gender, income_median_split,
+    TotalCrime, unemployed, gini,
+    demo_yrs,
+    rew_composite,
+    dospert_gam, dospert_soc, dospert_inv,
+    dospert_hs, dospert_ethic, dospert_rec,
+    susd_depression, susd_mania, scared_total,
+    uclal_total, bisbas_bas, bisbas_bis, sas_total
+  ) %>%
+  
+  mutate(
+    PG     = as.integer(pg),
+    gender = factor(demo_gender),
+    income = factor(income_median_split),
+    
+    # Neighbourhood disadvantage
+    z_crime  = as.numeric(scale(TotalCrime)),
+    z_unemp  = as.numeric(scale(unemployed)),
+    z_gini   = as.numeric(scale(gini)),
+    
+    # Demographics
+    z_age    = as.numeric(scale(demo_yrs)),
+    
+    # Psychological
+    z_reward        = as.numeric(scale(rew_composite)),
+    z_dospert       = as.numeric(scale(dospert_gam + dospert_soc + dospert_inv + dospert_hs + dospert_ethic + dospert_rec)),
+    z_dospert_inv   = as.numeric(scale(dospert_inv)),
+    z_dospert_gam   = as.numeric(scale(dospert_gam)),
+    z_dospert_ethic = as.numeric(scale(dospert_ethic)),
+    z_dospert_soc   = as.numeric(scale(dospert_soc)),
+    z_dospert_hs    = as.numeric(scale(dospert_hs)),
+    z_dospert_rec   = as.numeric(scale(dospert_rec)),
+    z_depression    = as.numeric(scale(susd_depression)),
+    z_mania         = as.numeric(scale(susd_mania)),
+    z_anxiety       = as.numeric(scale(scared_total)),
+    z_loneliness    = as.numeric(scale(uclal_total)),
+    z_bisbas_bas    = as.numeric(scale(bisbas_bas)),
+    z_bisbas_bis    = as.numeric(scale(bisbas_bis)),
+    z_sas_total     = as.numeric(scale(sas_total)),
+    
+    # Neighbourhood disadvantage composite
+    z_neigh_disadv = rowMeans(cbind(
+      as.numeric(scale(TotalCrime)),
+      as.numeric(scale(unemployed)),
+      as.numeric(scale(gini))
+    ), na.rm = TRUE)
+  ) %>%
+  
+  # ── Remove gender == 3 (no NA ambiguity after drop_na above) ───────────────
+  filter(gender %in% c(1, 2))
+
+# Checks
+table(dat$PG, useNA = "ifany")
+table(dat$gender, useNA = "ifany")
+cat("Analytic N =", nrow(dat), "\n")
+
+```
+
+```{r}
+
+# ── Hierarchical logistic models ──────────────────────────────────────────────
+
+# Block 1: Demographics + neighbourhood context
+m1 <- glm(
+  PG ~ z_neigh_disadv + gender + z_age + income,
+  data = dat, family = binomial(link = "logit"))
+
+# Block 2: Add reward sensitivity + risk-taking
+m2 <- glm(
+  PG ~ z_neigh_disadv + gender + z_age + income +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic + z_dospert_gam + z_dospert_inv + z_dospert_rec,
+  data = dat, family = binomial(link = "logit"))
+
+# Block 3: Add clinical/social symptoms
+m3 <- glm(
+  PG ~ z_neigh_disadv + gender + z_age + income +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic + z_dospert_gam + z_dospert_inv + z_dospert_rec +
+    z_depression + z_mania + z_anxiety + z_loneliness,
+  data = dat, family = binomial(link = "logit"))
+
+# Block 4: Add interactions
+m4 <- glm(
+  PG ~ z_neigh_disadv + gender + z_age + income +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic + z_dospert_gam + z_dospert_inv + z_dospert_rec +
+    z_depression + z_mania + z_anxiety + z_loneliness +
+    z_reward:z_loneliness +
+    z_reward:z_age,
+  data = dat, family = binomial(link = "logit"))
+
+```
+
+```{r}
+
+# ── Model comparisons ─────────────────────────────────────────────────────────
+anova(m1, m2, test = "Chisq")
+anova(m2, m3, test = "Chisq")
+anova(m3, m4, test = "Chisq")
+
+AIC(m1, m2, m3, m4)
+BIC(m1, m2, m3, m4)
+
+pR2(m1); pR2(m2); pR2(m3); pR2(m4)
+
+```
+
+```{r}
+
+# ── Odds ratios ───────────────────────────────────────────────────────────────
+get_or_table <- function(model) {
+  est <- coef(model)
+  ci  <- suppressMessages(confint(model))
+  data.frame(
+    term    = names(est),
+    OR      = exp(est),
+    CI_low  = exp(ci[, 1]),
+    CI_high = exp(ci[, 2]),
+    row.names = NULL
+  )
+}
+
+or_m1 <- get_or_table(m1)
+or_m2 <- get_or_table(m2)
+or_m3 <- get_or_table(m3)
+or_m4 <- get_or_table(m4)
+or_m4
+
+tidy(m4)
+
+```
+
+```{r}
+# ── Multicollinearity ─────────────────────────────────────────────────────────
+vif(m3)
+vif(m4)
+
+```
+
+```{r}
+
+# ── Robust SEs ───────────────────────────────────────────────────────────────
+coeftest(m4, vcov = vcovHC(m4, type = "HC3"))
+
+# Cluster-robust by ZIP code if needed:
+# coeftest(m4, vcov = vcovCL(m4, cluster = ~ demo_zip_prim))
+
+```
+
+```{r}
+
+# ── Predicted probabilities: reward × loneliness interaction ─────────────────
+newdat <- expand.grid(
+  z_neigh_disadv = 0,
+  gender         = levels(dat$gender)[1],
+  income         = levels(dat$income)[1],
+  z_age          = 0,
+  z_sas_total    = 0, 
+  z_reward       = c(-1, 0, 1),
+  z_dospert      = 0,
+  z_depression   = 0,
+  z_mania        = 0,
+  z_anxiety      = 0,
+  z_loneliness   = c(-1, 0, 1)
+)
+
+newdat$pred_prob <- predict(m4, newdata = newdat, type = "response")
+newdat
+
+```
+
+```{r}
+
+or_m4 %>%
+  filter(term != "(Intercept)") %>%
+  mutate(term = reorder(term, OR)) %>%
+  ggplot(aes(OR, term)) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
+  geom_errorbarh(aes(xmin = CI_low, xmax = CI_high), height = 0.2) +
+  geom_point(size = 3, colour = col_pg) +
+  scale_x_log10() +
+  labs(x = "Odds Ratio (log scale)", y = NULL,
+       title = "Odds Ratios from Final Model (m4)") +
+  theme_minimal(base_size = 13)
+
+```
+
+```{r}
+
+# ── 2. Clean Coefficient Table ────────────────────────────────────────────────
+# p-values, ORs, and CIs in one readable table
+library(knitr)
+
+tidy(m4, exponentiate = TRUE, conf.int = TRUE) %>%
+  mutate(across(c(estimate, conf.low, conf.high), ~ round(., 3)),
+         p.value = round(p.value, 3),
+         sig = case_when(
+           p.value < .001 ~ "***",
+           p.value < .01  ~ "**",
+           p.value < .05  ~ "*",
+           p.value < .1   ~ ".",
+           TRUE           ~ ""
+         )) %>%
+  rename(OR = estimate, CI_low = conf.low, CI_high = conf.high) %>%
+  kable()
+
+```
+
+```{r}
+
+# ── 3. Model Fit Summary ──────────────────────────────────────────────────────
+# McFadden R2 and AIC side by side
+data.frame(
+  Model        = c("M1: Context", "M2: + Reward/Risk", 
+                   "M3: + Clinical", "M4: + Interactions"),
+  AIC          = round(AIC(m1, m2, m3, m4)$AIC, 1),
+  BIC          = round(BIC(m1, m2, m3, m4)$BIC, 1),
+  McFadden_R2  = round(c(pR2(m1)["McFadden"], pR2(m2)["McFadden"],
+                          pR2(m3)["McFadden"], pR2(m4)["McFadden"]), 3)
+) %>% kable()
+
+```
+
+```{r}
+
+# ── 4. Predicted Probability Plots ───────────────────────────────────────────
+# More intuitive than log-odds — shows actual probability of being PG
+
+# Reward × Loneliness interaction
+newdat %>%
+  mutate(
+    Loneliness = factor(z_loneliness, labels = c("Low (−1SD)", "Mean", "High (+1SD)")),
+    Reward     = factor(z_reward,     labels = c("Low (−1SD)", "Mean", "High (+1SD)"))
+  ) %>%
+  ggplot(aes(Reward, pred_prob, colour = Loneliness, group = Loneliness)) +
+  geom_point(size = 3) +
+  geom_line() +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  scale_colour_manual(values = c(col_ng, col_rg, col_pg)) +
+  labs(x = "Reward Sensitivity", y = "Predicted P(Problem Gambler)",
+       colour = "Loneliness") +
+  theme_minimal(base_size = 13)
+
+```
+
+```{r}
+
+# ── 5. Confusion Matrix / Classification Accuracy ────────────────────────────
+# Shows how well the model predicts group membership
+predicted_class <- ifelse(predict(m4, type = "response") > 0.5, 1, 0)
+table(Predicted = predicted_class, Actual = dat$PG)
+
+# Overall accuracy
+mean(predicted_class == dat$PG, na.rm = TRUE)
+
+```
+
