@@ -1,0 +1,172 @@
+---
+title: "Heatmap"
+author: "Cooper Joseph Sharp"
+date: "2026-03-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+setwd("~/Documents/GitHub/2025-ICRG")
+df  <- read.csv("derivatives/scoring/analytic-sample.csv")
+
+```
+
+
+```{r}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# CORRELATION HEATMAPS BY GROUP
+# ════════════════════════════════════════════════════════════════════════════════
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# ── Prepare full analytic sample (all 3 groups) ──────────────────────────────
+dat_all <- df %>%
+  mutate(
+    PG_group = case_when(
+      pg == 0 ~ "Healthy Control",
+      pg == 1 ~ "Recreational Gambler",
+      pg == 2 ~ "Problem Gambler"
+    ),
+    gender = factor(demo_gender),
+    income = factor(income_median_split),
+    z_age           = as.numeric(scale(demo_yrs)),
+    z_yoe           = as.numeric(scale(ses_yoe)),
+    z_fevs          = as.numeric(scale(fevs_total)),
+    z_usidep        = as.numeric(scale(usidep_total)),
+    z_reward        = as.numeric(scale(rew_composite)),
+    z_dospert_inv   = as.numeric(scale(dospert_inv)),
+    z_dospert_ethic = as.numeric(scale(dospert_ethic)),
+    z_dospert_soc   = as.numeric(scale(dospert_soc)),
+    z_dospert_hs    = as.numeric(scale(dospert_hs)),
+    z_dospert_rec   = as.numeric(scale(dospert_rec)),
+    z_depression    = as.numeric(scale(susd_depression)),
+    z_mania         = as.numeric(scale(susd_mania)),
+    z_anxiety       = as.numeric(scale(scared_total)),
+    z_loneliness    = as.numeric(scale(uclal_total)),
+    z_planfulness   = as.numeric(scale(planfulness_mean)),
+    z_neigh_disadv  = rowMeans(cbind(
+      as.numeric(scale(TotalCrime)),
+      as.numeric(scale(unemployed)),
+      as.numeric(scale(gini))
+    ), na.rm = TRUE)
+  ) %>%
+  drop_na(
+    PG_group, gender, income,
+    z_neigh_disadv, z_age, z_yoe,
+    z_reward,
+    z_dospert_inv, z_dospert_ethic, z_dospert_soc, z_dospert_hs, z_dospert_rec,
+    z_depression, z_mania, z_anxiety, z_loneliness, z_planfulness,
+    z_fevs, z_usidep, TotalCrime, unemployed, gini
+  ) %>%
+  filter(gender %in% c(1, 2))
+
+# ── Variables & clean labels ──────────────────────────────────────────────────
+heatmap_vars <- c(
+  "z_neigh_disadv", "z_age", "z_yoe",
+  "z_reward",
+  "z_dospert_hs", "z_dospert_soc", "z_dospert_ethic",
+  "z_dospert_inv", "z_dospert_rec",
+  "z_depression", "z_mania", "z_anxiety",
+  "z_loneliness", "z_planfulness",
+  "z_fevs", "z_usidep"
+)
+
+var_labels <- c(
+  "z_neigh_disadv"  = "Neighbourhood Disadvantage",
+  "z_age"           = "Age",
+  "z_yoe"           = "Years of Education",
+  "z_reward"        = "Reward Sensitivity",
+  "z_dospert_hs"    = "DOSPERT: Health/Safety",
+  "z_dospert_soc"   = "DOSPERT: Social",
+  "z_dospert_ethic" = "DOSPERT: Ethical",
+  "z_dospert_inv"   = "DOSPERT: Investment",
+  "z_dospert_rec"   = "DOSPERT: Recreational",
+  "z_depression"    = "Depression",
+  "z_mania"         = "Mania",
+  "z_anxiety"       = "Anxiety",
+  "z_loneliness"    = "Loneliness",
+  "z_planfulness"   = "Planfulness",
+  "z_fevs"          = "Financial Vulnerability",
+  "z_usidep"        = "Financial Dependence"
+)
+
+# ── Helper: compute correlation matrix and reshape to long ───────────────────
+get_cor_long <- function(data, vars, label) {
+  cor_mat <- cor(data[, vars], use = "pairwise.complete.obs")
+  cor_mat[upper.tri(cor_mat)] <- NA  # keep lower triangle only
+  
+  as.data.frame(cor_mat) %>%
+    mutate(var1 = rownames(cor_mat)) %>%
+    pivot_longer(-var1, names_to = "var2", values_to = "r") %>%
+    filter(!is.na(r)) %>%
+    mutate(
+      var1  = factor(var_labels[var1], levels = rev(var_labels)),
+      var2  = factor(var_labels[var2], levels = var_labels),
+      group = label
+    )
+}
+
+# ── Build each group's long correlation data ──────────────────────────────────
+cor_hc  <- get_cor_long(filter(dat_all, PG_group == "Healthy Control"),        heatmap_vars, "Healthy Controls")
+cor_rg  <- get_cor_long(filter(dat_all, PG_group == "Recreational Gambler"),   heatmap_vars, "Recreational Gamblers")
+cor_pg  <- get_cor_long(filter(dat_all, PG_group == "Problem Gambler"),        heatmap_vars, "Problem Gamblers")
+cor_all <- get_cor_long(dat_all,                                                heatmap_vars, "Full Sample")
+
+# ── Shared heatmap theme ──────────────────────────────────────────────────────
+heatmap_theme <- theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 9),
+    axis.text.y  = element_text(size = 9),
+    axis.title   = element_blank(),
+    legend.position = "right",
+    plot.title   = element_text(face = "bold", size = 13, hjust = 0.5),
+    panel.grid   = element_blank()
+  )
+
+heatmap_scale <- scale_fill_gradient2(
+  low      = "steelblue",
+  mid      = "white",
+  high     = "firebrick",
+  midpoint = 0,
+  limits   = c(-1, 1),
+  name     = "r"
+)
+
+# ── Plot function ─────────────────────────────────────────────────────────────
+plot_heatmap <- function(cor_long, title) {
+  ggplot(cor_long, aes(var2, var1, fill = r)) +
+    geom_tile(colour = "white", linewidth = 0.4) +
+    geom_text(aes(label = ifelse(abs(r) >= 0.0 & var1 != var2,
+                                 sprintf("%.2f", r), "")),
+              size = 2.5, colour = "grey20") +
+    heatmap_scale +
+    heatmap_theme +
+    labs(title = title)
+}
+
+# ── Generate all 4 plots ──────────────────────────────────────────────────────
+p_hc  <- plot_heatmap(cor_hc,  "Healthy Controls")
+p_rg  <- plot_heatmap(cor_rg,  "Recreational Gamblers")
+p_pg  <- plot_heatmap(cor_pg,  "Problem Gamblers")
+p_all <- plot_heatmap(cor_all, "Full Sample")
+
+print(p_hc)
+print(p_rg)
+print(p_pg)
+print(p_all)
+
+# ── Optional: save all 4 to one PDF ──────────────────────────────────────────
+# library(gridExtra)
+# pdf("figures/correlation_heatmaps.pdf", width = 12, height = 10)
+# grid.arrange(p_hc, p_rg, p_pg, p_all, ncol = 2)
+# dev.off()
+```
+

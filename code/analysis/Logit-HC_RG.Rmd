@@ -1,0 +1,400 @@
+---
+title: "Untitled"
+author: "Cooper Joseph Sharp"
+date: "2026-03-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+# ============================================================================
+# ICRG: Healthy Control vs. Recreational Gamblers — Paper Analysis
+# Author: Cooper Joseph Sharp
+# Date:   2026-03-26
+# ============================================================================
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(car)
+library(broom)
+library(pscl)
+library(lmtest)
+library(sandwich)
+library(tidycensus)
+library(pROC)
+library(knitr)
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 1. DATA LOADING & PREPARATION
+# ════════════════════════════════════════════════════════════════════════════════
+
+setwd("~/Documents/GitHub/2025-ICRG")
+df     <- read.csv("derivatives/scoring/analytic-sample.csv")
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 2. ANALYTIC SAMPLE — HC (0) vs. Recreational (1)
+# ════════════════════════════════════════════════════════════════════════════════
+
+dat <- df %>%
+  filter(pg != 2) %>%
+  drop_na(
+    pg, demo_gender, income_median_split,
+    TotalCrime, unemployed, gini, demo_yrs,
+    rew_composite,
+    dospert_gam, dospert_soc, dospert_inv,
+    dospert_hs, dospert_ethic, dospert_rec,
+    susd_depression, susd_mania, scared_total,
+    uclal_total, bisbas_bas, bisbas_bis, sas_total, planfulness_mean
+  ) %>%
+  mutate(
+    PG     = ifelse(pg == 1, 1L, 0L),      # 0 = HC, 1 = recreational
+    gender = factor(demo_gender),
+    income = factor(income_median_split),
+
+    z_age           = as.numeric(scale(demo_yrs)),
+    z_yoe           = as.numeric(scale(ses_yoe)),
+    z_fevs          = as.numeric(scale(fevs_total)),
+    z_usidep        = as.numeric(scale(usidep_total)),
+
+    z_reward        = as.numeric(scale(rew_composite)),
+    z_dospert_inv   = as.numeric(scale(dospert_inv)),
+    z_dospert_ethic = as.numeric(scale(dospert_ethic)),
+    z_dospert_soc   = as.numeric(scale(dospert_soc)),
+    z_dospert_hs    = as.numeric(scale(dospert_hs)),
+    z_dospert_rec   = as.numeric(scale(dospert_rec)),
+
+    z_depression    = as.numeric(scale(susd_depression)),
+    z_mania         = as.numeric(scale(susd_mania)),
+    z_anxiety       = as.numeric(scale(scared_total)),
+    z_loneliness    = as.numeric(scale(uclal_total)),
+    z_planfulness   = as.numeric(scale(planfulness_mean)),
+
+    z_neigh_disadv = rowMeans(cbind(
+      as.numeric(scale(TotalCrime)),
+      as.numeric(scale(unemployed)),
+      as.numeric(scale(gini))
+    ), na.rm = TRUE)
+  ) %>%
+  filter(gender %in% c(1, 2))
+
+cat("Analytic N =", nrow(dat), "\n")
+cat("HC (PG=0):",          sum(dat$PG == 0), "\n")
+cat("Recreational (PG=1):", sum(dat$PG == 1), "\n")
+table(dat$race, dat$PG)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 3. HIERARCHICAL LOGISTIC REGRESSION
+# ════════════════════════════════════════════════════════════════════════════════
+
+# Block 1: Demographics + neighbourhood context
+m1 <- glm(
+  PG ~ z_neigh_disadv + gender + z_age + race + z_yoe,
+  data = dat, family = binomial
+)
+
+# Block 2: + Reward sensitivity & risk-taking
+m2 <- glm(
+  PG ~ z_neigh_disadv + gender + z_age + race + z_yoe +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic +
+    z_dospert_inv + z_dospert_rec,
+  data = dat, family = binomial
+)
+
+# Block 3: + Clinical/social symptoms
+m3 <- glm(
+  PG ~ z_neigh_disadv + gender + z_age + race + z_yoe +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic +
+    z_dospert_inv + z_dospert_rec +
+    z_depression + z_mania + z_anxiety + z_loneliness +
+    z_planfulness,
+  data = dat, family = binomial
+)
+
+# Block 4: + Financial vulnerability
+m4 <- glm(
+  PG ~ z_neigh_disadv + gender + z_age + income + race + z_yoe +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic +
+    z_dospert_inv + z_dospert_rec +
+    z_depression + z_mania + z_anxiety + z_loneliness +
+    z_planfulness +
+    z_fevs + z_usidep,
+  data = dat, family = binomial
+)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 4. MODEL COMPARISONS
+# ════════════════════════════════════════════════════════════════════════════════
+
+cat("\n── Likelihood-ratio tests ──\n")
+anova(m1, m2, test = "Chisq")
+anova(m2, m3, test = "Chisq")
+anova(m3, m4, test = "Chisq")
+
+data.frame(
+  Model       = c("M1: Context", "M2: + Reward/Risk",
+                   "M3: + Clinical", "M4: + Financial"),
+  AIC         = round(AIC(m1, m2, m3, m4)$AIC, 1),
+  BIC         = round(BIC(m1, m2, m3, m4)$BIC, 1),
+  McFadden_R2 = round(c(pR2(m1)["McFadden"], pR2(m2)["McFadden"],
+                         pR2(m3)["McFadden"], pR2(m4)["McFadden"]), 3)
+) %>% kable()
+
+cat("\n── VIF (M4) ──\n")
+vif(m4)
+
+cat("\n── HC3 Robust SEs (M4) ──\n")
+coeftest(m4, vcov = vcovHC(m4, type = "HC3"))
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 5. ODDS RATIOS
+# ════════════════════════════════════════════════════════════════════════════════
+
+col_pg <- "purple4"
+
+get_or_table <- function(model) {
+  est <- coef(model)
+  ci  <- suppressMessages(confint(model))
+  data.frame(
+    term    = names(est),
+    OR      = exp(est),
+    CI_low  = exp(ci[, 1]),
+    CI_high = exp(ci[, 2]),
+    row.names = NULL
+  )
+}
+
+or_m4 <- get_or_table(m4)
+
+tidy(m4, exponentiate = TRUE, conf.int = TRUE) %>%
+  mutate(across(c(estimate, conf.low, conf.high), ~ round(., 3)),
+         p.value = round(p.value, 3),
+         sig = case_when(
+           p.value < .001 ~ "***",
+           p.value < .01  ~ "**",
+           p.value < .05  ~ "*",
+           p.value < .1   ~ ".",
+           TRUE           ~ ""
+         )) %>%
+  rename(OR = estimate, CI_low = conf.low, CI_high = conf.high) %>%
+  kable()
+
+or_m4 %>%
+  filter(term != "(Intercept)") %>%
+  mutate(term = reorder(term, OR)) %>%
+  ggplot(aes(OR, term)) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
+  geom_errorbarh(aes(xmin = CI_low, xmax = CI_high), height = 0.2) +
+  geom_point(size = 3, colour = col_pg) +
+  scale_x_log10() +
+  labs(x = "Odds Ratio (log scale)", y = NULL,
+       title = "Odds Ratios — HC vs. Recreational Gamblers (M4)") +
+  theme_minimal(base_size = 13)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 6. ROC / AUC
+# ════════════════════════════════════════════════════════════════════════════════
+
+col_ng <- "pink3"
+col_rg <- "purple1"
+
+roc1 <- roc(dat$PG, predict(m1, type = "response"), quiet = TRUE)
+roc2 <- roc(dat$PG, predict(m2, type = "response"), quiet = TRUE)
+roc3 <- roc(dat$PG, predict(m3, type = "response"), quiet = TRUE)
+roc4 <- roc(dat$PG, predict(m4, type = "response"), quiet = TRUE)
+
+auc_table <- data.frame(
+  Model = c("M1: Context", "M2: + Reward/Risk",
+            "M3: + Clinical", "M4: + Financial"),
+  AUC   = round(c(auc(roc1), auc(roc2), auc(roc3), auc(roc4)), 3)
+)
+kable(auc_table)
+
+cat("\n── DeLong Tests ──\n")
+cat("M1 vs M2:\n"); print(roc.test(roc1, roc2, method = "delong"))
+cat("M2 vs M3:\n"); print(roc.test(roc2, roc3, method = "delong"))
+cat("M3 vs M4:\n"); print(roc.test(roc3, roc4, method = "delong"))
+
+ggroc(
+  list(
+    "M1: Context"       = roc1,
+    "M2: + Reward/Risk" = roc2,
+    "M3: + Clinical"    = roc3,
+    "M4: + Financial"   = roc4
+  ),
+  linewidth = 1
+) +
+  geom_abline(intercept = 1, slope = 1,
+              linetype = "dashed", colour = "grey60") +
+  scale_colour_manual(
+    values = c("M1: Context"       = "grey70",
+               "M2: + Reward/Risk" = col_ng,
+               "M3: + Clinical"    = col_rg,
+               "M4: + Financial"   = col_pg)
+  ) +
+  annotate("text", x = 0.25, y = 0.30, hjust = 0, size = 3.8,
+           label = paste0(
+             "AUC M1 = ", auc_table$AUC[1], "\n",
+             "AUC M2 = ", auc_table$AUC[2], "\n",
+             "AUC M3 = ", auc_table$AUC[3], "\n",
+             "AUC M4 = ", auc_table$AUC[4]
+           )) +
+  labs(x = "Specificity", y = "Sensitivity", colour = "Model",
+       title = "ROC Curves: HC vs. Recreational Gamblers") +
+  theme_minimal(base_size = 13)
+
+# ── Classification at Youden's J ────────────────────────────────────────────
+best_thresh <- coords(roc4, "best",
+                      ret = c("threshold", "sensitivity",
+                              "specificity", "ppv", "npv"))
+cat("\n── Optimal Cut-Point (Youden's J) ──\n")
+print(best_thresh)
+
+predicted_class <- ifelse(predict(m4, type = "response") > best_thresh$threshold, 1, 0)
+cat("\n── Confusion Matrix ──\n")
+table(Predicted = predicted_class, Actual = dat$PG)
+cat("Accuracy:", round(mean(predicted_class == dat$PG, na.rm = TRUE), 3), "\n")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 7. CROSS-VALIDATION & LASSO
+# ════════════════════════════════════════════════════════════════════════════════
+
+library(boot)
+library(glmnet)
+
+set.seed(42)
+K <- 10
+folds <- sample(rep(1:K, length.out = nrow(dat)))
+
+cv_auc <- function(formula, data, folds, K) {
+  held_out_probs <- numeric(nrow(data))
+  for (k in 1:K) {
+    train <- data[folds != k, ]
+    test  <- data[folds == k, ]
+    fit   <- glm(formula, data = train, family = binomial)
+    held_out_probs[folds == k] <- predict(fit, newdata = test, type = "response")
+  }
+  return(auc(roc(data$PG, held_out_probs, quiet = TRUE)))
+}
+
+cv_auc_m1 <- cv_auc(
+  PG ~ z_neigh_disadv + gender + z_age + race + z_yoe,
+  dat, folds, K)
+cv_auc_m2 <- cv_auc(
+  PG ~ z_neigh_disadv + gender + z_age + race + z_yoe +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic +
+    z_dospert_inv + z_dospert_rec,
+  dat, folds, K)
+cv_auc_m3 <- cv_auc(
+  PG ~ z_neigh_disadv + gender + z_age + race + z_yoe +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic +
+    z_dospert_inv + z_dospert_rec +
+    z_depression + z_mania + z_anxiety + z_loneliness +
+    z_planfulness,
+  dat, folds, K)
+cv_auc_m4 <- cv_auc(
+  PG ~ z_neigh_disadv + gender + z_age + income + race + z_yoe +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic +
+    z_dospert_inv + z_dospert_rec +
+    z_depression + z_mania + z_anxiety + z_loneliness +
+    z_planfulness +
+    z_fevs + z_usidep,
+  dat, folds, K)
+
+comparison <- data.frame(
+  Model        = c("M1: Context", "M2: + Reward/Risk",
+                    "M3: + Clinical", "M4: + Financial"),
+  InSample_AUC = round(c(auc(roc1), auc(roc2), auc(roc3), auc(roc4)), 3),
+  CV_AUC       = round(c(cv_auc_m1, cv_auc_m2, cv_auc_m3, cv_auc_m4), 3)
+)
+comparison$Shrinkage <- comparison$InSample_AUC - comparison$CV_AUC
+kable(comparison)
+
+# ── Repeated CV (M3 and M4 only) ────────────────────────────────────────────
+n_repeats <- 50
+
+repeated_cv_auc <- function(formula, data, K, n_repeats) {
+  aucs <- numeric(n_repeats)
+  for (r in 1:n_repeats) {
+    folds_r <- sample(rep(1:K, length.out = nrow(data)))
+    aucs[r] <- cv_auc(formula, data, folds_r, K)
+  }
+  return(aucs)
+}
+
+cat("\n── Running 50 × 10-fold CV ──\n")
+
+rep_m3 <- repeated_cv_auc(
+  PG ~ z_neigh_disadv + gender + z_age + race + z_yoe +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic +
+    z_dospert_inv + z_dospert_rec +
+    z_depression + z_mania + z_anxiety + z_loneliness +
+    z_planfulness,
+  dat, K, n_repeats)
+
+rep_m4 <- repeated_cv_auc(
+  PG ~ z_neigh_disadv + gender + z_age + income + race + z_yoe +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic +
+    z_dospert_inv + z_dospert_rec +
+    z_depression + z_mania + z_anxiety + z_loneliness +
+    z_planfulness +
+    z_fevs + z_usidep,
+  dat, K, n_repeats)
+
+cat(sprintf("  M3 repeated CV: %.3f [%.3f, %.3f]\n",
+    mean(rep_m3), quantile(rep_m3, 0.025), quantile(rep_m3, 0.975)))
+cat(sprintf("  M4 repeated CV: %.3f [%.3f, %.3f]\n",
+    mean(rep_m4), quantile(rep_m4, 0.025), quantile(rep_m4, 0.975)))
+
+# ── LASSO ────────────────────────────────────────────────────────────────────
+x_vars <- model.matrix(
+  ~ z_neigh_disadv + gender + z_age + income + race + z_yoe +
+    z_reward + z_dospert_hs + z_dospert_soc + z_dospert_ethic +
+    z_dospert_inv + z_dospert_rec +
+    z_depression + z_mania + z_anxiety + z_loneliness +
+    z_planfulness + z_fevs + z_usidep,
+  data = dat
+)[, -1]
+
+y <- dat$PG
+
+set.seed(42)
+lasso_cv_auc <- cv.glmnet(x_vars, y, family = "binomial",
+                           alpha = 1, nfolds = 10, type.measure = "auc")
+
+lasso_coefs <- coef(lasso_cv_auc, s = "lambda.1se")
+retained <- data.frame(
+  term = rownames(lasso_coefs),
+  coef = round(as.numeric(lasso_coefs), 4)
+) %>%
+  filter(coef != 0, term != "(Intercept)")
+
+cat("\n── LASSO Retained Predictors ──\n")
+kable(retained)
+
+best_idx <- which(lasso_cv_auc$lambda == lasso_cv_auc$lambda.min)
+cat(sprintf("\n── LASSO CV AUC: %.3f ──\n", lasso_cv_auc$cvm[best_idx]))
+
+# ── Summary ──────────────────────────────────────────────────────────────────
+cat("\n═══════════════════════════════════════════════════\n")
+cat("  OVERFITTING DIAGNOSTIC SUMMARY\n")
+cat("═══════════════════════════════════════════════════\n")
+cat(sprintf("  M4 in-sample AUC:    %.3f\n", auc(roc4)))
+cat(sprintf("  M4 10-fold CV AUC:   %.3f\n", cv_auc_m4))
+cat(sprintf("  M4 repeated CV:      %.3f [%.3f, %.3f]\n",
+    mean(rep_m4), quantile(rep_m4, 0.025), quantile(rep_m4, 0.975)))
+cat(sprintf("  LASSO CV AUC:        %.3f\n", lasso_cv_auc$cvm[best_idx]))
+cat(sprintf("  Predictors retained: %d / %d\n", nrow(retained), ncol(x_vars)))
+cat("═══════════════════════════════════════════════════\n")
+
+```
+

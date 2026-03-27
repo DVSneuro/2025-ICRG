@@ -1,0 +1,376 @@
+---
+title: "Untitled"
+author: "Cooper Joseph Sharp"
+date: "2026-03-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, Load Libraries}
+
+# ============================================================================
+# ICRG: Data Cleaning + Summary Statistics for Paper
+# Author: Cooper Joseph Sharp
+# Date:   2026-03-26
+# ============================================================================
+
+library(dplyr)
+library(tidyr)
+library(tidycensus)
+library(knitr)
+library(ggplot2)
+
+```
+
+
+```{r, Load Data}
+
+setwd("~/Documents/GitHub/2025-ICRG")
+df     <- read.csv("derivatives/scoring/scoring-mastersheet.csv")
+df_geo <- read.csv("derivatives/scoring/geo-variables.csv")
+
+```
+
+
+```{r, Reward Sensitivity}
+
+# ── Reward sensitivity composite 
+
+df$bisbas_bas <- df$bisbas_drive + df$bisbas_fun_seek + df$bisbas_reward_res
+
+calculate_z <- function(X, X_mean, S) { (X - X_mean) / S }
+
+df$bisbas_bas_z_score <- calculate_z(
+  df$bisbas_bas,
+  mean(df$bisbas_bas, na.rm = TRUE),
+  sd(df$bisbas_bas, na.rm = TRUE)
+)
+df$spsrq_sr_z_score <- calculate_z(
+  df$spsrq_sr,
+  mean(df$spsrq_sr, na.rm = TRUE),
+  sd(df$spsrq_sr, na.rm = TRUE)
+)
+
+df$rs_standard <- df$bisbas_bas_z_score - df$spsrq_sr_z_score
+
+q3 <- quantile(df$rs_standard, 0.75, na.rm = TRUE)
+q1 <- quantile(df$rs_standard, 0.25, na.rm = TRUE)
+iqr <- q3 - q1
+df <- df[!(df$rs_standard >= q3 + 1.5 * iqr |
+           df$rs_standard <= q1 - 1.5 * iqr) |
+           is.na(df$rs_standard), ]
+
+df$rew_composite <- df$spsrq_sr_z_score + df$bisbas_bas_z_score
+
+```
+
+
+```{r, Add Geo Variables from Tidy Census}
+
+# ── Gini index by ZIP ────────────────────────────────────────────────────────
+gini_zip <- get_acs(
+  geography = "zcta",
+  variables = c(gini = "B19083_001"),
+  year = 2021, survey = "acs5"
+) %>%
+  dplyr::select(GEOID, estimate) %>%
+  rename(zipcode = GEOID, gini = estimate)
+
+df <- df %>%
+  mutate(zipcode = as.character(demo_zip_prim)) %>%
+  left_join(gini_zip, by = "zipcode") %>%
+  left_join(df_geo, by = "ResponseId") %>%
+  mutate(across(everything(), ~ ifelse(. == -999, NA, .))) %>%
+  filter(if_all(c(sogs_total, bbgs_total, mandf_casinog, mandf_onlineg,
+                  TotalCrime, unemployed, gini, demo_yrs, demo_gender,
+                  rew_composite, susd_depression, susd_mania,
+                  scared_total, uclal_total), ~ !is.na(.)))
+
+# ── Classification ───────────────────────────────────────────────────────────
+df <- df %>%
+  mutate(
+    pg = case_when(
+      sogs_total >= 1 & bbgs_total >= 4 & (mandf_casinog + mandf_onlineg) >= 1 ~ 2,
+      sogs_total == 0 & bbgs_total <= 3 & (mandf_casinog + mandf_onlineg) == 0 ~ 0,
+      TRUE ~ 1
+    ),
+    pg_label = factor(
+      case_when(
+        pg == 0 ~ "Non-Gambler",
+        pg == 1 ~ "Recreational",
+        pg == 2 ~ "Problem"
+      ),
+      levels = c("Non-Gambler", "Recreational", "Problem")
+    ),
+    income_median_split = factor(
+      ifelse(ses_tpi <= 2, "Below Median (<$40k)", "Above Median (≥$40k)"),
+      levels = c("Below Median (<$40k)", "Above Median (≥$40k)")
+    ),
+    race = factor(
+      case_when(
+        demo_race == 5 ~ "White",
+        demo_race == 4 ~ "Black",
+        demo_race == 2 ~ "Asian",
+        TRUE           ~ "Other"
+      ),
+      levels = c("White", "Black", "Asian", "Other")
+    ),
+    gender_label = factor(
+      demo_gender,
+      levels = c(1, 2),
+      labels = c("Male", "Female")
+    )
+  )
+
+```
+
+
+```{r, Export Data}
+
+write.csv(df, "derivatives/scoring/analytic-sample.csv", row.names = FALSE)
+cat("Cleaned CSV exported:", nrow(df), "rows\n\n")
+
+```
+
+
+```{r, Exclusions and Demographics}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 3. SAMPLE OVERVIEW
+# ════════════════════════════════════════════════════════════════════════════════
+
+cat("══════════════════════════════════════════════════\n")
+cat("  SAMPLE OVERVIEW\n")
+cat("══════════════════════════════════════════════════\n")
+cat("Total N:", nrow(df), "\n")
+cat("Non-Gambler:", sum(df$pg == 0),
+    sprintf("(%.1f%%)", 100 * mean(df$pg == 0)), "\n")
+cat("Recreational:", sum(df$pg == 1),
+    sprintf("(%.1f%%)", 100 * mean(df$pg == 1)), "\n")
+cat("Problem:", sum(df$pg == 2),
+    sprintf("(%.1f%%)", 100 * mean(df$pg == 2)), "\n\n")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 4. TABLE 1 — DEMOGRAPHICS BY GROUP
+# ════════════════════════════════════════════════════════════════════════════════
+
+# ── Age ──────────────────────────────────────────────────────────────────────
+cat("── Age ──\n")
+df %>%
+  group_by(pg_label) %>%
+  summarise(
+    N    = n(),
+    Mean = round(mean(demo_yrs, na.rm = TRUE), 1),
+    SD   = round(sd(demo_yrs, na.rm = TRUE), 1),
+    Min  = min(demo_yrs, na.rm = TRUE),
+    Max  = max(demo_yrs, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% kable()
+
+cat("\nAge ANOVA:\n")
+summary(aov(demo_yrs ~ pg_label, data = df))
+
+# ── Gender ───────────────────────────────────────────────────────────────────
+cat("\n── Gender ──\n")
+gender_tab <- table(df$gender_label, df$pg_label)
+print(gender_tab)
+cat("\nGender chi-square:\n")
+print(chisq.test(gender_tab))
+
+# Gender proportions by group
+df %>%
+  filter(!is.na(gender_label)) %>%
+  group_by(pg_label, gender_label) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(pg_label) %>%
+  mutate(pct = round(100 * n / sum(n), 1)) %>%
+  kable()
+
+# ── Race ─────────────────────────────────────────────────────────────────────
+cat("\n── Race ──\n")
+race_tab <- table(df$race, df$pg_label)
+print(race_tab)
+cat("\nRace chi-square:\n")
+print(chisq.test(race_tab))
+
+df %>%
+  group_by(pg_label, race) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(pg_label) %>%
+  mutate(pct = round(100 * n / sum(n), 1)) %>%
+  kable()
+
+# ── Income ───────────────────────────────────────────────────────────────────
+cat("\n── Income ──\n")
+income_tab <- table(df$income_median_split, df$pg_label)
+print(income_tab)
+cat("\nIncome chi-square:\n")
+print(chisq.test(income_tab))
+
+# ── Years of Education ───────────────────────────────────────────────────────
+cat("\n── Years of Education ──\n")
+df %>%
+  group_by(pg_label) %>%
+  summarise(
+    Mean = round(mean(ses_yoe, na.rm = TRUE), 1),
+    SD   = round(sd(ses_yoe, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>% kable()
+
+cat("\nYOE ANOVA:\n")
+summary(aov(ses_yoe ~ pg_label, data = df))
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 5. TABLE 2 — KEY MEASURES BY GROUP (M, SD, group test)
+# ════════════════════════════════════════════════════════════════════════════════
+
+continuous_vars <- c(
+  "rew_composite",
+  "dospert_soc", "dospert_ethic", "dospert_inv",
+  "dospert_hs", "dospert_rec",
+  "susd_depression", "susd_mania",
+  "scared_total", "uclal_total",
+  "planfulness_mean",
+  "fevs_total", "usidep_total",
+  "TotalCrime", "unemployed", "gini",
+  "sogs_total", "bbgs_total"
+)
+
+var_labels <- c(
+  "Reward Sensitivity (composite)",
+  "DOSPERT Social", "DOSPERT Ethical", "DOSPERT Investment",
+  "DOSPERT Health/Safety", "DOSPERT Recreational",
+  "Depression (SUSD)", "Mania (SUSD)",
+  "Anxiety (SCARED)", "Loneliness (UCLA)",
+  "Planfulness",
+  "Financial Exploitation (FEVS)", "Neighborhood Deprivation (USIDEP)",
+  "Crime Rate", "Unemployment Rate", "Gini Index",
+  "SOGS Total", "BBGS Total"
+)
+
+cat("\n══════════════════════════════════════════════════\n")
+cat("  KEY MEASURES BY GROUP\n")
+cat("══════════════════════════════════════════════════\n\n")
+
+measures_table <- do.call(rbind, lapply(seq_along(continuous_vars), function(i) {
+  var <- continuous_vars[i]
+  label <- var_labels[i]
+
+  group_stats <- df %>%
+    group_by(pg_label) %>%
+    summarise(
+      M  = mean(.data[[var]], na.rm = TRUE),
+      SD = sd(.data[[var]], na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # One-way ANOVA p-value
+  f_test <- tryCatch({
+    fit <- aov(reformulate("pg_label", response = var), data = df)
+    p <- summary(fit)[[1]][["Pr(>F)"]][1]
+    round(p, 3)
+  }, error = function(e) NA)
+
+  ng  <- group_stats %>% filter(pg_label == "Non-Gambler")
+  rec <- group_stats %>% filter(pg_label == "Recreational")
+  pg  <- group_stats %>% filter(pg_label == "Problem")
+
+  data.frame(
+    Variable  = label,
+    NG_M_SD   = sprintf("%.2f (%.2f)", ng$M, ng$SD),
+    Rec_M_SD  = sprintf("%.2f (%.2f)", rec$M, rec$SD),
+    PG_M_SD   = sprintf("%.2f (%.2f)", pg$M, pg$SD),
+    p         = ifelse(is.na(f_test), "—",
+                  ifelse(f_test < .001, "<.001", as.character(f_test))),
+    row.names = NULL
+  )
+}))
+
+kable(measures_table,
+      col.names = c("Variable", "Non-Gambler M(SD)",
+                     "Recreational M(SD)", "Problem M(SD)", "p"))
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 6. GAMBLING BEHAVIOR DESCRIPTIVES (for Table 1 or narrative)
+# ════════════════════════════════════════════════════════════════════════════════
+
+cat("\n── Gambling Modalities ──\n")
+df %>%
+  group_by(pg_label) %>%
+  summarise(
+    Casino_pct  = round(100 * mean(mandf_casinog > 0, na.rm = TRUE), 1),
+    Online_pct  = round(100 * mean(mandf_onlineg > 0, na.rm = TRUE), 1),
+    SOGS_mean   = round(mean(sogs_total, na.rm = TRUE), 2),
+    SOGS_sd     = round(sd(sogs_total, na.rm = TRUE), 2),
+    BBGS_mean   = round(mean(bbgs_total, na.rm = TRUE), 2),
+    BBGS_sd     = round(sd(bbgs_total, na.rm = TRUE), 2),
+    .groups = "drop"
+  ) %>% kable()
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 7. CORRELATION MATRIX (continuous predictors)
+# ════════════════════════════════════════════════════════════════════════════════
+
+cor_vars <- df %>%
+  dplyr::select(
+    rew_composite,
+    dospert_soc, dospert_ethic, dospert_inv,
+    dospert_hs, dospert_rec,
+    susd_depression, susd_mania,
+    scared_total, uclal_total,
+    planfulness_mean,
+    fevs_total, usidep_total,
+    TotalCrime, unemployed, gini,
+    demo_yrs
+  ) %>%
+  drop_na()
+
+cor_mat <- round(cor(cor_vars), 2)
+
+cat("\n── Correlation Matrix ──\n")
+kable(cor_mat)
+
+# Flag high correlations (|r| > .60)
+cat("\n── Correlations |r| > .60 ──\n")
+high_cors <- which(abs(cor_mat) > 0.60 & upper.tri(cor_mat), arr.ind = TRUE)
+if (nrow(high_cors) > 0) {
+  for (i in 1:nrow(high_cors)) {
+    cat(sprintf("  %s × %s: r = %.2f\n",
+        rownames(cor_mat)[high_cors[i, 1]],
+        colnames(cor_mat)[high_cors[i, 2]],
+        cor_mat[high_cors[i, 1], high_cors[i, 2]]))
+  }
+} else {
+  cat("  None\n")
+}
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 8. SAMPLE FLOW / EXCLUSIONS
+# ════════════════════════════════════════════════════════════════════════════════
+
+cat("\n══════════════════════════════════════════════════\n")
+cat("  SAMPLE FLOW\n")
+cat("══════════════════════════════════════════════════\n")
+cat("Total after cleaning:", nrow(df), "\n")
+cat("Gender 1 (Male):",   sum(df$demo_gender == 1, na.rm = TRUE), "\n")
+cat("Gender 2 (Female):", sum(df$demo_gender == 2, na.rm = TRUE), "\n")
+cat("Gender 3 (Other):",  sum(df$demo_gender == 3, na.rm = TRUE), "\n")
+cat("Missing gender:",    sum(is.na(df$demo_gender)), "\n\n")
+
+# Analytic N after dropping gender == 3 (used in all models)
+analytic <- df %>% filter(demo_gender %in% c(1, 2))
+cat("Analytic N (gender 1 or 2):", nrow(analytic), "\n")
+cat("  Non-Gambler:", sum(analytic$pg == 0), "\n")
+cat("  Recreational:", sum(analytic$pg == 1), "\n")
+cat("  Problem:",      sum(analytic$pg == 2), "\n")
+
+```
+
